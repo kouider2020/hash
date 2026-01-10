@@ -55,7 +55,7 @@ def store_password(pwd):
 
 # --- Resume support ---
 progress_file = "progress.txt"
-num_permutations = 1000  # Change as needed
+num_permutations = 10_000_000  # Change as needed
 
 # Determine starting index
 if os.path.exists(progress_file):
