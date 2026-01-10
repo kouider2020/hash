@@ -1,0 +1,84 @@
+name: PBKDF2 Fold Storage
+
+on:
+  workflow_dispatch:
+
+jobs:
+  store-password:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Compute fold and map to folder/file
+        run: |
+          python3 - << 'EOF'
+          import hashlib, binascii, os
+
+          # --- Password and salt ---
+          password = b'Thi0-mYneWpaSsword1@'
+          salt = b'somesalt'
+
+          # --- PBKDF2 parameters ---
+          iterations = 32800
+          dklen = 32  # 32 bytes output
+
+          # --- Derive key ---
+          dk = hashlib.pbkdf2_hmac('sha256', password, salt, iterations, dklen)
+
+          # --- XOR fold function ---
+          def xor_four_8byte_blocks(b32):
+              assert len(b32) == 32
+              res = bytearray(8)
+              for i in range(4):
+                  block = b32[i*8:(i+1)*8]
+                  for j in range(8):
+                      res[j] ^= block[j]
+              return bytes(res)
+
+          fold = xor_four_8byte_blocks(dk)
+          fold_int = int.from_bytes(fold, 'big')
+
+          # --- Folder structure parameters ---
+          N1 = 1000
+          N2 = 1000
+          N3 = 1000
+          N4 = 1000
+          lines_per_file = 20_000_000
+
+          total_capacity = N1 * N2 * N3 * N4 * lines_per_file
+
+          # Fold mapping modulo total capacity
+          index = fold_int % total_capacity
+
+          # Compute indices
+          sf1_idx = index // (N2 * N3 * N4 * lines_per_file)
+          sf2_idx = (index // (N3 * N4 * lines_per_file)) % N2
+          sf3_idx = (index // (N4 * lines_per_file)) % N3
+          file_idx = (index // lines_per_file) % N4
+          line_idx = index % lines_per_file
+
+          # Folder path
+          folder_path = f"main_folder/sf1_{sf1_idx}/sf2_{sf2_idx}/sf3_{sf3_idx}"
+          os.makedirs(folder_path, exist_ok=True)
+          file_path = os.path.join(folder_path, f"file_{file_idx}.txt")
+
+          # Store password + fold (simulated)
+          with open(file_path, "a") as f:
+              f.write(f"{line_idx}: {password.decode()} | fold={fold_int}\n")
+
+          # Print for verification
+          print(f"Stored in: {file_path}")
+          print(f"Line index: {line_idx}")
+          print(f"Fold value: {fold_int}")
+
+          EOF
+
+      - name: Show example file
+        run: |
+          ls -R main_folder | head -20
