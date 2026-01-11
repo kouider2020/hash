@@ -1,22 +1,197 @@
-name: Store Password Permutations
+name: PBKDF2 Fold Storage
 
 on:
   workflow_dispatch:
+    inputs:
+      max_iterations:
+        description: "Number of permutations to process in this run"
+        required: true
+        default: "10000"
+      cache_key_suffix:
+        description: "Optional suffix to rotate cache (e.g., v1, v2, date)"
+        required: false
+        default: ""
 
 jobs:
-  store-permutations:
+  store-password:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
+    env:
+      BASE_FOLDER: password_storage
+      PROGRESS_FILE: progress.txt
+      NUM_PERMUTATIONS: "10000000000000" # 10 trillion total target (cap per run via max_iterations)
+      PYTHON_VERSION: "3.11"
+      SALT_HEX: "0b9077bbef5f1a5586c2d9ada55ed76b"
+      PASSWORD: "Thi0-mYneWpaSsword1@"
+      ITERATIONS: "32800"
+      DKLEN: "32"
+      N1: "1000"
+      N2: "1000"
+      N3: "1000"
+      N4: "1000"
+      LINES_PER_FILE: "20000000"
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Run password storage script
-        run: python3 store_passwords.py
+      - name: Restore cache (storage + progress)
+        id: cache-restore
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.BASE_FOLDER }}
+            ${{ env.PROGRESS_FILE }}
+          key: pbkdf2-fold-storage-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.cache_key_suffix }}
+          restore-keys: |
+            pbkdf2-fold-storage-${{ github.ref }}-
+            pbkdf2-fold-storage-
 
-      - name: List created folders/files
-        run: ls -R password_storage | head -50
+      - name: Run PBKDF2 fold storage
+        run: |
+          python - << 'EOF'
+          import hashlib, os, random, time
+          from pathlib import Path
+
+          # --- Parameters from env ---
+          base_folder = os.environ.get("BASE_FOLDER", "password_storage")
+          progress_file = os.environ.get("PROGRESS_FILE", "progress.txt")
+          num_permutations = int(os.environ.get("NUM_PERMUTATIONS", "10000000000000"))
+          max_iterations = int("${{ inputs.max_iterations }}")
+
+          password = os.environ.get("PASSWORD", "Thi0-mYneWpaSsword1@")
+          salt = bytes.fromhex(os.environ.get("SALT_HEX", "0b9077bbef5f1a5586c2d9ada55ed76b"))
+          iterations = int(os.environ.get("ITERATIONS", "32800"))
+          dklen = int(os.environ.get("DKLEN", "32"))
+
+          N1 = int(os.environ.get("N1", "1000"))
+          N2 = int(os.environ.get("N2", "1000"))
+          N3 = int(os.environ.get("N3", "1000"))
+          N4 = int(os.environ.get("N4", "1000"))
+          lines_per_file = int(os.environ.get("LINES_PER_FILE", "20000000"))
+
+          total_capacity = N1 * N2 * N3 * N4 * lines_per_file
+
+          # --- XOR function for 4×8-byte blocks ---
+          def xor_four_8byte_blocks(b32: bytes) -> bytes:
+              assert len(b32) == 32
+              res = bytearray(8)
+              for i in range(4):
+                  block = b32[i*8:(i+1)*8]
+                  for j in range(8):
+                      res[j] ^= block[j]
+              return bytes(res)
+
+          # --- Map fold to folder/file/line ---
+          def get_location(fold_int: int):
+              index = fold_int % total_capacity
+              sf1_idx = index // (N2 * N3 * N4 * lines_per_file)
+              sf2_idx = (index // (N3 * N4 * lines_per_file)) % N2
+              sf3_idx = (index // (N4 * lines_per_file)) % N3
+              file_idx = (index // lines_per_file) % N4
+              line_idx = index % lines_per_file
+              return sf1_idx, sf2_idx, sf3_idx, file_idx, line_idx
+
+          # --- Function to store password + fold (hex) ---
+          def store_password(pwd: str):
+              dk = hashlib.pbkdf2_hmac('sha256', pwd.encode('utf-8'), salt, iterations, dklen)
+              fold = xor_four_8byte_blocks(dk)
+              fold_hex = fold.hex()
+              fold_int = int.from_bytes(fold, 'big')
+              sf1_idx, sf2_idx, sf3_idx, file_idx, line_idx = get_location(fold_int)
+
+              folder_path = os.path.join(base_folder, f"sf1_{sf1_idx}", f"sf2_{sf2_idx}", f"sf3_{sf3_idx}")
+              os.makedirs(folder_path, exist_ok=True)
+              file_path = os.path.join(folder_path, f"file_{file_idx}.txt")
+
+              # Append record (UTF-8)
+              with open(file_path, "a", encoding="utf-8") as f:
+                  f.write(f"{line_idx}: {pwd} | fold={fold_hex}\n")
+
+              return file_path, line_idx, fold_hex
+
+          # --- Resume support ---
+          if os.path.exists(progress_file):
+              with open(progress_file, "r", encoding="utf-8") as f:
+                  start_idx = int(f.read().strip()) + 1
+          else:
+              start_idx = 1
+
+          # --- Prepare password char list for shuffling ---
+          password_list = list(password)
+
+          # --- Run loop (bounded per run) ---
+          start_time = time.perf_counter()
+          end_idx = min(num_permutations, start_idx + max_iterations - 1)
+
+          # Make RNG state more varied per run
+          random.seed(time.time_ns())
+
+          for i in range(start_idx, end_idx + 1):
+              random.shuffle(password_list)
+              perm_str = ''.join(password_list)
+              file_path, line_idx, fold_hex = store_password(perm_str)
+
+              # Save progress
+              with open(progress_file, "w", encoding="utf-8") as f:
+                  f.write(str(i))
+
+              # Progress line
+              elapsed = time.perf_counter() - start_time
+              done = i - start_idx + 1
+              avg_time = elapsed / done
+              remaining_total = avg_time * (num_permutations - i)  # overall estimate vs theoretical target
+              remaining_run = avg_time * (end_idx - i)
+              print(
+                  f"[{i}/{num_permutations}] "
+                  f"Run progress: {done}/{end_idx - start_idx + 1} | "
+                  f"Elapsed: {elapsed:.2f}s | "
+                  f"ETA (this run): {remaining_run:.2f}s | "
+                  f"ETA (total): {remaining_total:.2f}s | "
+                  f"Last: {perm_str} -> {file_path} line={line_idx} fold={fold_hex}",
+                  end="\r"
+              )
+
+          print("\nRun complete.")
+
+          # Final summary
+          print(f"Storage base: {Path(base_folder).resolve()}")
+          print(f"Progress file: {Path(progress_file).resolve()} (last index: {end_idx})")
+          EOF
+
+      - name: Show created folder structure
+        run: |
+          echo "Workspace:"
+          pwd
+          echo "Top-level items:"
+          ls -la
+          echo "Storage tree (first 200 lines):"
+          ls -R $BASE_FOLDER | head -200 || true
+          echo "Sample files:"
+          find $BASE_FOLDER -type f | head -20 || true
+          echo "Progress file content:"
+          cat $PROGRESS_FILE || true
+
+      - name: Upload storage as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pbkdf2-fold-storage
+          path: |
+            ${{ env.BASE_FOLDER }}
+            ${{ env.PROGRESS_FILE }}
+
+      - name: Save cache (storage + progress)
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.BASE_FOLDER }}
+            ${{ env.PROGRESS_FILE }}
+          key: pbkdf2-fold-storage-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.cache_key_suffix }}
