@@ -22,7 +22,7 @@ jobs:
     env:
       BASE_FOLDER: password_storage
       PROGRESS_FILE: progress.txt
-      NUM_PERMUTATIONS: "10000000" # 10 trillion total target (cap per run via max_iterations)
+      NUM_PERMUTATIONS: "100000000" # 10 trillion total target (cap per run via max_iterations)
       PYTHON_VERSION: "3.11"
       SALT_HEX: "0b9077bbef5f1a5586c2d9ada55ed76b"
       PASSWORD: "Thi0-mYneWpaSsword1@"
