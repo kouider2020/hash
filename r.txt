@@ -1,0 +1,34 @@
+/usr/local/python/3.12.1/lib/python3.12/site-packages/zebracorn/unicorn.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+The provided io object does not sub-class io.IOBase
+LIEF parser interface does not support this Python object: bytearray
+Traceback (most recent call last):
+  File "/home/codespace/.python/current/bin/zelos", line 7, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/__main__.py", line 23, in main
+    z = ZelosCmdline(sys.argv[1:])
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/api/zelos_api.py", line 721, in __init__
+    self._setup(config)
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/api/zelos_api.py", line 78, in _setup
+    e = Engine(config=config, api=self)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/engine.py", line 123, in __init__
+    self.load_executable(binary, entrypoint_override=config.startat)
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/engine.py", line 315, in load_executable
+    file = self._first_parse(module_path)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/engine.py", line 289, in _first_parse
+    return self._parse_file_data(module_path, file_data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/engine.py", line 297, in _parse_file_data
+    parsed_file = self.os_plugins.parse(filename, filedata)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/plugin/plugin.py", line 171, in parse
+    parsed_file = os_plugin.parse(path, binary)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/ext/platforms/linux/linux.py", line 58, in parse
+    if binary.format != lief.EXE_FORMATS.ELF:
+       ^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'format'

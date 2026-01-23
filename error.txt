@@ -1,0 +1,24 @@
+/usr/local/python/3.12.1/lib/python3.12/site-packages/zebracorn/unicorn.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+Traceback (most recent call last):
+  File "/home/codespace/.python/current/bin/zelos", line 7, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/__main__.py", line 23, in main
+    z = ZelosCmdline(sys.argv[1:])
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/api/zelos_api.py", line 720, in __init__
+    config = generate_config_from_cmdline(cmdline_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/config_gen.py", line 289, in generate_config_from_cmdline
+    parser = generate_parser()
+             ^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/config_gen.py", line 279, in generate_parser
+    _ = PluginCommands(paths, parser)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/plugin/plugin.py", line 201, in __init__
+    load(paths)
+  File "/usr/local/python/3.12.1/lib/python3.12/site-packages/zelos/plugin/plugin.py", line 75, in load
+    found_module = finder.find_module(name)
+                   ^^^^^^^^^^^^^^^^^^
+AttributeError: 'FileFinder' object has no attribute 'find_module'
