@@ -38,7 +38,7 @@ jobs:
         run: |
           mkdir -p termux-python/include termux-python/lib termux-python/bin
           tar xf $GITHUB_WORKSPACE/termux/sysroot/python${PYVER}/python${PYVER}-headers.tar.gz \
-            -C termux-python/include
+             -C termux-python/include
           cp $GITHUB_WORKSPACE/termux/sysroot/python${PYVER}/libpython${PYVER}.so termux-python/lib/
           # Create stub Python executable for nanobind
           ln -s /usr/bin/python3 termux-python/bin/python${PYVER}
@@ -85,7 +85,8 @@ jobs:
             -DPython3_EXECUTABLE=$GITHUB_WORKSPACE/termux-python/bin/python${PYVER} \
             -DPython3_INCLUDE_DIR=$GITHUB_WORKSPACE/termux-python/include/python${PYVER} \
             -DPython3_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so \
-            -DPython3_FIND_STRATEGY=LOCATION
+            -DPython3_FIND_STRATEGY=LOCATION \
+            -DPython3_FIND_IMPLEMENTATIONS=CPython
 
           ninja -j1
 
