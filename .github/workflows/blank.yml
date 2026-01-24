@@ -1,60 +1,93 @@
-name: Build LIEF for Termux (Android)
+name: Build LIEF for Termux (aarch64)
 
 on:
   workflow_dispatch:
+  push:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
+    env:
+      API: 24
+      PYVER: 3.12
+      NDK_VERSION: r26d
+      REPO_DIR: hash  # your repo with python headers
 
     steps:
-    - name: Checkout LIEF
-      uses: actions/checkout@v4
-      with:
-        repository: lief-project/LIEF
-        ref: 0.12.3
+      # 1️⃣ Checkout the repo with headers
+      - name: Checkout main repo
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          cmake ninja-build \
-          python3 python3-pip \
-          unzip wget
+      # 2️⃣ Install build dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git cmake ninja-build wget unzip python3 python3-pip
 
-    - name: Download Android NDK
-      run: |
-        wget https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
-        unzip android-ndk-r26d-linux.zip
-        echo "NDK=$PWD/android-ndk-r26d" >> $GITHUB_ENV
+      # 3️⃣ Download Android NDK
+      - name: Download Android NDK
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
+          unzip -q android-ndk-${NDK_VERSION}-linux.zip
 
-    - name: Configure LIEF (Android)
-      run: |
-        mkdir build && cd build
+      # 4️⃣ Prepare Termux Python sysroot from repo
+      - name: Prepare Termux Python
+        run: |
+          mkdir -p termux-python/include termux-python/lib
+          tar xf $REPO_DIR/termux/sysroot/python${PYVER}/python${PYVER}-headers.tar.gz \
+            -C termux-python/include
+          cp $REPO_DIR/termux/sysroot/python${PYVER}/libpython${PYVER}.so termux-python/lib/
 
-        cmake .. -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
-          -DANDROID_ABI=arm64-v8a \
-          -DANDROID_PLATFORM=android-24 \
-          -DLIEF_PYTHON_API=OFF \
-          -DLIEF_SHARED_LIB=ON \
-          -DLIEF_STATIC_LIB=OFF \
-          -DLIEF_ENABLE_JSON=OFF \
-          -DLIEF_LOGGING=OFF
+      # 5️⃣ Build LIEF
+      - name: Build LIEF wheel
+        run: |
+          set -e
+          export NDK=$PWD/android-ndk-${NDK_VERSION}
+          export TC=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 
-    - name: Build
-      run: |
-        cd build
-        ninja
+          export CC=$TC/bin/aarch64-linux-android${API}-clang
+          export CXX=$TC/bin/aarch64-linux-android${API}-clang++
+          export AR=$TC/bin/llvm-ar
+          export LD=$TC/bin/ld.lld
+          export STRIP=$TC/bin/llvm-strip
 
-    - name: Package artifacts
-      run: |
-        mkdir -p artifact/lib
-        cp build/libLIEF.so artifact/lib/
+          git clone https://github.com/lief-project/LIEF.git
+          cd LIEF
+          git checkout 0.17.2
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: lief-termux-arm64
-        path: artifact
+          # Create minimal toolchain file
+          cat > android.cmake <<EOF
+          set(CMAKE_SYSTEM_NAME Android)
+          set(CMAKE_SYSTEM_VERSION ${API})
+          set(CMAKE_ANDROID_ARCH_ABI arm64-v8a)
+          set(CMAKE_ANDROID_NDK $NDK)
+          set(CMAKE_ANDROID_STL_TYPE c++_shared)
+          set(CMAKE_ANDROID_API ${API})
+          EOF
+
+          mkdir build && cd build
+
+          cmake .. \
+            -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=../android.cmake \
+            -DLIEF_PYTHON_API=ON \
+            -DLIEF_SHARED_LIB=ON \
+            -DLIEF_EXAMPLES=OFF \
+            -DLIEF_TESTS=OFF \
+            -DLIEF_DOC=OFF \
+            -DPYTHON_INCLUDE_DIR=$GITHUB_WORKSPACE/termux-python/include/python${PYVER} \
+            -DPYTHON_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so
+
+          ninja -j1
+
+          cd ..
+          python3 setup.py bdist_wheel --plat-name=android_aarch64
+
+      # 6️⃣ Upload artifact
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-lief-wheel
+          path: LIEF/dist/*.whl
