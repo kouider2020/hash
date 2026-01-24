@@ -14,12 +14,12 @@ jobs:
       NDK_VERSION: r26d
 
     steps:
-      # 1️⃣ Checkout your repo via SSH
-      - name: Checkout repo with headers
+      # 1️⃣ Checkout your repo with Python headers via SSH
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          persist-credentials: false  # so Git uses SSH instead of HTTPS
+          persist-credentials: false
 
       # 2️⃣ Install build dependencies
       - name: Install dependencies
@@ -36,10 +36,12 @@ jobs:
       # 4️⃣ Prepare Termux Python sysroot from repo
       - name: Prepare Termux Python
         run: |
-          mkdir -p termux-python/include termux-python/lib
+          mkdir -p termux-python/include termux-python/lib termux-python/bin
           tar xf $GITHUB_WORKSPACE/termux/sysroot/python${PYVER}/python${PYVER}-headers.tar.gz \
             -C termux-python/include
           cp $GITHUB_WORKSPACE/termux/sysroot/python${PYVER}/libpython${PYVER}.so termux-python/lib/
+          # Create stub Python executable for nanobind
+          ln -s /usr/bin/python3 termux-python/bin/python${PYVER}
 
       # 5️⃣ Build LIEF
       - name: Build LIEF wheel
@@ -79,7 +81,11 @@ jobs:
             -DLIEF_TESTS=OFF \
             -DLIEF_DOC=OFF \
             -DPYTHON_INCLUDE_DIR=$GITHUB_WORKSPACE/termux-python/include/python${PYVER} \
-            -DPYTHON_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so
+            -DPYTHON_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so \
+            -DPython3_EXECUTABLE=$GITHUB_WORKSPACE/termux-python/bin/python${PYVER} \
+            -DPython3_INCLUDE_DIR=$GITHUB_WORKSPACE/termux-python/include/python${PYVER} \
+            -DPython3_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so \
+            -DPython3_FIND_STRATEGY=LOCATION
 
           ninja -j1
 
