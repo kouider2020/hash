@@ -1,101 +1,48 @@
-name: Build LIEF for Termux (aarch64)
+name: Build LIEF ARM64 Wheel
 
 on:
   workflow_dispatch:
   push:
+    branches: [ main ]
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    env:
-      API: 24
-      PYVER: 3.12
-      NDK_VERSION: r26d
+  build-lief-arm64:
+    runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout your repo with Python headers via SSH
-      - name: Checkout repo
+      - name: Checkout source
         uses: actions/checkout@v4
-        with:
-          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          persist-credentials: false
 
-      # 2️⃣ Install build dependencies
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y git cmake ninja-build wget unzip python3 python3-pip
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build python3-dev python3-pip g++ make \
+            qemu-user-static binfmt-support crossbuild-essential-arm64
 
-      # 3️⃣ Download Android NDK
-      - name: Download Android NDK
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build wheel for aarch64
         run: |
-          wget https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
-          unzip -q android-ndk-${NDK_VERSION}-linux.zip
-
-      # 4️⃣ Prepare Termux Python sysroot from repo
-      - name: Prepare Termux Python
-        run: |
-          mkdir -p termux-python/include termux-python/lib termux-python/bin
-          tar xf $GITHUB_WORKSPACE/termux/sysroot/python${PYVER}/python${PYVER}-headers.tar.gz \
-             -C termux-python/include
-          cp $GITHUB_WORKSPACE/termux/sysroot/python${PYVER}/libpython${PYVER}.so termux-python/lib/
-          # Create stub Python executable for nanobind
-          ln -s /usr/bin/python3 termux-python/bin/python${PYVER}
-
-      # 5️⃣ Build LIEF
-      - name: Build LIEF wheel
-        run: |
-          set -e
-          export NDK=$PWD/android-ndk-${NDK_VERSION}
-          export TC=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-
-          export CC=$TC/bin/aarch64-linux-android${API}-clang
-          export CXX=$TC/bin/aarch64-linux-android${API}-clang++
-          export AR=$TC/bin/llvm-ar
-          export LD=$TC/bin/ld.lld
-          export STRIP=$TC/bin/llvm-strip
-
           git clone https://github.com/lief-project/LIEF.git
           cd LIEF
-          git checkout 0.17.2
-
-          # Minimal Android toolchain file
-          cat > android.cmake <<EOF
-          set(CMAKE_SYSTEM_NAME Android)
-          set(CMAKE_SYSTEM_VERSION ${API})
-          set(CMAKE_ANDROID_ARCH_ABI arm64-v8a)
-          set(CMAKE_ANDROID_NDK $NDK)
-          set(CMAKE_ANDROID_STL_TYPE c++_shared)
-          set(CMAKE_ANDROID_API ${API})
-          EOF
-
           mkdir build && cd build
-
           cmake .. \
-            -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=../android.cmake \
             -DLIEF_PYTHON_API=ON \
-            -DLIEF_SHARED_LIB=ON \
-            -DLIEF_EXAMPLES=OFF \
-            -DLIEF_TESTS=OFF \
-            -DLIEF_DOC=OFF \
-            -DPYTHON_INCLUDE_DIR=$GITHUB_WORKSPACE/termux-python/include/python${PYVER} \
-            -DPYTHON_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so \
-            -DPython3_EXECUTABLE=$GITHUB_WORKSPACE/termux-python/bin/python${PYVER} \
-            -DPython3_INCLUDE_DIR=$GITHUB_WORKSPACE/termux-python/include/python${PYVER} \
-            -DPython3_LIBRARY=$GITHUB_WORKSPACE/termux-python/lib/libpython${PYVER}.so \
-            -DPython3_FIND_STRATEGY=LOCATION \
-            -DPython3_FIND_IMPLEMENTATIONS=CPython
+            -DPYTHON_EXECUTABLE=$(which python3) \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+          make -j$(nproc)
+          cd api/python
+          python3 setup.py bdist_wheel
 
-          ninja -j1
-
-          cd ..
-          python3 setup.py bdist_wheel --plat-name=android_aarch64
-
-      # 6️⃣ Upload wheel artifact
-      - name: Upload wheel
+      - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termux-lief-wheel
-          path: LIEF/dist/*.whl
+          name: lief-arm64-wheel
+          path: LIEF/build/api/python/dist/*.whl
