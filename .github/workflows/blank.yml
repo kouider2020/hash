@@ -13,12 +13,13 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake ninja-build python3-dev python3-pip g++ make \
-            qemu-user-static binfmt-support crossbuild-essential-arm64
+            cmake ninja-build g++ make \
+            qemu-user-static binfmt-support crossbuild-essential-arm64 \
+            python3-dev python3.11-dev python3-pip
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -36,7 +37,9 @@ jobs:
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DPython_INCLUDE_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['include'])") \
+            -DPython_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")/libpython3.11.so
           make -j$(nproc)
           cd api/python
           python3 setup.py bdist_wheel
