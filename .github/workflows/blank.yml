@@ -13,74 +13,37 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install Python 3.11 + headers (deadsnakes PPA)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y software-properties-common
-          sudo add-apt-repository ppa:deadsnakes/ppa -y
-          sudo apt-get update
-          sudo apt-get install -y \
-            python3.11 python3.11-dev python3.11-distutils python3-pip
-
       - name: Install build dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install -y \
             cmake ninja-build g++ make \
             qemu-user-static binfmt-support crossbuild-essential-arm64 \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-
+            python3-dev python3.11-dev python3-pip
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Ensure LIEF source and folders
+      - name: Build wheel for aarch64
         run: |
-          if [ ! -d "LIEF" ]; then
-            echo "Cloning LIEF..."
-            git clone https://github.com/lief-project/LIEF.git
-          fi
+          git clone https://github.com/lief-project/LIEF.git
           cd LIEF
-          if [ ! -d "build" ]; then
-            mkdir build
-          fi
-          echo "Now in: $(pwd)"
-
-      - name: Build LIEF for aarch64
-        run: |
-          cd LIEF/build
+          mkdir build && cd build
           cmake .. \
             -DLIEF_PYTHON_API=ON \
-            -DPYTHON_EXECUTABLE=$(which python3.11) \
+            -DPYTHON_EXECUTABLE=$(which python3) \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DPython_INCLUDE_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_paths()['include'])") \
+            -DPython_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")/libpython3.11.so
           make -j$(nproc)
-
-      - name: Upload compiled shared library
-        uses: actions/upload-artifact@v4
-        with:
-          name: lief-shared-lib
-          path: LIEF/build/api/python/_lief.so
-
-      - name: Package wheel
-        run: |
-          cd LIEF/api/python
-          python3.11 -m pip install build wheel setuptools
-          python3.11 -m build --wheel
-
-      - name: List dist contents
-        run: ls -R LIEF/api/python/dist || echo "No dist directory found"
-
+          cd ../api/python
+          python setup.py bdist_wheel
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
           name: lief-arm64-wheel
-          path: LIEF/api/python/dist/*.whl
-
-      - name: Upload build dir
-        uses: actions/upload-artifact@v4
-        with:
-          name: lief-build
-          path: LIEF/build
+          path: LIEF/build/api/python/dist/*.whl
