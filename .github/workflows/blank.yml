@@ -1,4 +1,4 @@
-name: Build LIEF Termux ARM64 Wheel
+name: Build LIEF ARM64 Wheel
 
 on:
   workflow_dispatch:
@@ -6,61 +6,50 @@ on:
     branches: [ main ]
 
 jobs:
-  build-termux:
+  build-lief-arm64:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install QEMU user static
+      - name: Install Python 3.11 + headers (deadsnakes PPA)
         run: |
-          sudo apt update
-          sudo apt install -y qemu-user-static
-
-      - name: Enable ARM64 emulation
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository ppa:deadsnakes/ppa -y
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3.11 python3.11-dev python3.11-distutils python3-pip
+      - name: Install build dependencies
         run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          sudo apt-get install -y \
+            cmake ninja-build g++ make \
+            qemu-user-static binfmt-support crossbuild-essential-arm64
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Build LIEF inside Termux (ARM64)
+      - name: Build wheel for aarch64
         run: |
-          docker run --rm -t \
-            --platform linux/arm64 \
-            termux/termux-docker:aarch64 \
-            bash -lc "
-              set -e
-
-              pkg upgrade -y
-              pkg install -y \
-                python \
-                python-dev \
-                clang \
-                cmake \
-                ninja \
-                make \
-                git
-
-              python -m pip install --upgrade pip build wheel setuptools
-
-              git clone https://github.com/lief-project/LIEF.git
-              cd LIEF
-
-              mkdir build && cd build
-              cmake .. \
-                -DLIEF_PYTHON_API=ON \
-                -DCMAKE_C_COMPILER=clang \
-                -DCMAKE_CXX_COMPILER=clang++ \
-                -DPython3_EXECUTABLE=\$(which python)
-
-              ninja
-
-              cd ../api/python
-              python -m build --wheel
-            "
-
-      - name: Upload Termux wheel artifact
+          git clone https://github.com/lief-project/LIEF.git
+          cd LIEF
+          mkdir build && cd build
+          cmake .. \
+            -DLIEF_PYTHON_API=ON \
+            -DPYTHON_EXECUTABLE=$(which python3.11) \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DPython_INCLUDE_DIR=$(python3.11 -c "import sysconfig; print(sysconfig.get_paths()['include'])") \
+            -DPython_LIBRARY=$(python3.11 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")/libpython3.11.so
+          make -j$(nproc)
+          cd ../api/python
+          python setup.py build 
+      - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lief-termux-aarch64
-          path: |
-            **/LIEF/api/python/dist/*.whl
+          name: lief-arm64-wheel
+          path: LIEF/api/python/dist/*.whl
