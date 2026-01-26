@@ -21,11 +21,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             python3.11 python3.11-dev python3.11-distutils python3-pip
+
       - name: Install build dependencies
         run: |
           sudo apt-get install -y \
             cmake ninja-build g++ make \
             qemu-user-static binfmt-support crossbuild-essential-arm64
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -46,12 +48,9 @@ jobs:
             -DPython_INCLUDE_DIR=$(python3.11 -c "import sysconfig; print(sysconfig.get_paths()['include'])") \
             -DPython_LIBRARY=$(python3.11 -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")/libpython3.11.so
           make -j$(nproc)
-        
-          - name: Upload compiled shared library
-          uses: actions/upload-artifact@v4
-          with:
-            name: lief-shared-lib
-            path: LIEF/build/api/python/_lief.so
-          
-        
-          
+
+      - name: Upload compiled shared library
+        uses: actions/upload-artifact@v4
+        with:
+          name: lief-shared-lib
+          path: LIEF/build/api/python/_lief.so
