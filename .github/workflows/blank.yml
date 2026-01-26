@@ -56,4 +56,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lief-arm64-wheel
-          path: LIEF/build/api/python/dist/*.whl
+          path: LIEF/api/python/dist/*.whl
