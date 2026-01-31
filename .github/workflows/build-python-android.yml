@@ -68,7 +68,7 @@ jobs:
           make install
 
       - name: Upload built Python
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: python-android-${PYTHON_VERSION}
           path: ${{ github.workspace }}/python-android
