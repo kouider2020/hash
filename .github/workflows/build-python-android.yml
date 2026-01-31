@@ -1,4 +1,4 @@
-name: Build Python for Android ARM64
+name: Build Python 3.8 for Android ARM64
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ jobs:
   build-python:
     runs-on: ubuntu-latest
     env:
-      PYTHON_VERSION: 2.7.18
+      PYTHON_VERSION: 3.8.18
       ANDROID_NDK_VERSION: r25b
       TARGET: aarch64-linux-android
       API_LEVEL: 21
@@ -55,8 +55,6 @@ jobs:
             --prefix=$PREFIX \
             --enable-shared \
             --disable-ipv6 \
-            ac_cv_file__dev_ptmx=yes \
-            ac_cv_file__dev_ptc=no \
             LDFLAGS="--sysroot=$SYSROOT" \
             CFLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include" \
             CPPFLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include"
