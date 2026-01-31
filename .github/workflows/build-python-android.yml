@@ -1,72 +1,132 @@
-name: Build Python 3.8 for Android ARM64
+# GitHub Actions: Cross-compile CPython 3.8 for Android (Termux)
+# Produces tarballs with the installed DESTDIR for each architecture.
+name: Build Python 3.8 for Termux (Android)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  build-python:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [aarch64, armv7]
     env:
-      PYTHON_VERSION: 3.8.18
-      ANDROID_NDK_VERSION: r25b
-      TARGET: aarch64-linux-android
-      API_LEVEL: 21
-      PREFIX: ${{ github.workspace }}/python-android
-
+      PYTHON_VERSION: 3.8.16
+      NDK_VERSION: r21e
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install host packages
         run: |
-          sudo apt update
-          sudo apt install -y build-essential wget curl unzip git
+          sudo apt-get update
+          sudo apt-get install -y build-essential wget unzip ccache pkg-config \
+            zlib1g-dev libssl-dev libbz2-dev libreadline-dev libsqlite3-dev \
+            libncurses5-dev libffi-dev liblzma-dev
 
       - name: Download Android NDK
         run: |
-          wget https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip
-          unzip android-ndk-${ANDROID_NDK_VERSION}-linux.zip -d $HOME
-          echo "ANDROID_NDK=$HOME/android-ndk-${ANDROID_NDK_VERSION}" >> $GITHUB_ENV
+          NDK_VER=${{ env.NDK_VERSION }}
+          NDK_ZIP="android-ndk-${NDK_VER}-linux-x86_64.zip"
+          wget -q "https://dl.google.com/android/repository/${NDK_ZIP}" -O ndk.zip
+          unzip -q ndk.zip -d $HOME/android-ndk
+          # expose the concrete path for downstream steps
+          NDK_PATH="$HOME/android-ndk/android-ndk-${NDK_VER}"
+          echo "NDK_PATH=${NDK_PATH}" >> $GITHUB_ENV
+          echo "NDK=${NDK_PATH}" > ndkpath.txt
 
-      - name: Download Python source
+      - name: Configure toolchain environment
         run: |
-          wget https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz
-          tar xvf Python-${PYTHON_VERSION}.tgz
+          NDK=${NDK_PATH:-$(cat ndkpath.txt)}
+          # Set arch-specific toolchain variables and API level
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            API=21
+            TARGET=aarch64-linux-android
+            HOST_TRIPLE=aarch64-linux-android
+          else
+            API=16
+            # clang driver for armeabi-v7a uses the 'armv7a-linux-androideabi' prefix
+            TARGET=armv7a-linux-androideabi
+            HOST_TRIPLE=armv7a-linux-androideabi
+          fi
+          SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          PATH_ADD="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "API=${API}" >> $GITHUB_ENV
+          echo "TARGET=${TARGET}" >> $GITHUB_ENV
+          echo "HOST_TRIPLE=${HOST_TRIPLE}" >> $GITHUB_ENV
+          echo "SYSROOT=${SYSROOT}" >> $GITHUB_ENV
+          echo "PATH=${PATH_ADD}:$PATH" >> $GITHUB_ENV
+          # Use clang driver wrapper names provided by the NDK
+          echo "CC=${TARGET}${API}-clang" >> $GITHUB_ENV
+          echo "CXX=${TARGET}${API}-clang++" >> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
 
-      - name: Set up cross-compiler environment
+      - name: Download CPython source
         run: |
-          TOOLCHAIN=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64
-          SYSROOT=$TOOLCHAIN/sysroot
-          echo "TOOLCHAIN=$TOOLCHAIN" >> $GITHUB_ENV
-          echo "SYSROOT=$SYSROOT" >> $GITHUB_ENV
-          echo "CC=$TOOLCHAIN/bin/${TARGET}${API_LEVEL}-clang" >> $GITHUB_ENV
-          echo "CXX=$TOOLCHAIN/bin/${TARGET}${API_LEVEL}-clang++" >> $GITHUB_ENV
-          echo "AR=$TOOLCHAIN/bin/llvm-ar" >> $GITHUB_ENV
-          echo "RANLIB=$TOOLCHAIN/bin/llvm-ranlib" >> $GITHUB_ENV
-          echo "LD=$TOOLCHAIN/bin/ld" >> $GITHUB_ENV
-          echo "STRIP=$TOOLCHAIN/bin/llvm-strip" >> $GITHUB_ENV
+          PY_VER=${{ env.PYTHON_VERSION }}
+          wget -q "https://www.python.org/ftp/python/${PY_VER}/Python-${PY_VER}.tgz"
+          tar xf "Python-${PY_VER}.tgz"
 
-      - name: Configure Python for cross-compilation
+      - name: Configure CPython for cross-compile
+        working-directory: "Python-${{ env.PYTHON_VERSION }}"
+        env:
+          # GITHUB_ENV set earlier makes CC/CXX/.. available as environment vars here
+          CC: ${{ env.CC }}
+          CXX: ${{ env.CXX }}
+          AR: ${{ env.AR }}
+          RANLIB: ${{ env.RANLIB }}
+          SYSROOT: ${{ env.SYSROOT }}
+          API: ${{ env.API }}
+          TARGET: ${{ env.TARGET }}
+          HOST_TRIPLE: ${{ env.HOST_TRIPLE }}
         run: |
-          cd Python-${PYTHON_VERSION}
+          set -euo pipefail
+          # Export toolchain variables for configure/make
+          export CC="${CC}"
+          export CXX="${CXX}"
+          export AR="${AR}"
+          export RANLIB="${RANLIB}"
+          export CFLAGS="--sysroot=${SYSROOT} -D__ANDROID_API__=${API} -O2 -fPIC"
+          export LDFLAGS="--sysroot=${SYSROOT} -Wl,--no-undefined"
+          # When cross-compiling, skip configure tests that try to run target executables.
+          export ac_cv_file__dev_ptmx=yes
+          export ac_cv_file__dev_ptc=no
+          export ac_cv_have_long_long=yes
+          # Configure CPython: build host is the runner (x86_64-pc-linux-gnu)
           ./configure \
-            --host=${TARGET} \
-            --build=$(uname -m)-linux-gnu \
-            --prefix=$PREFIX \
+            --host="${HOST_TRIPLE}" \
+            --build=x86_64-pc-linux-gnu \
+            --prefix=/usr \
             --enable-shared \
-            --disable-ipv6 \
-            LDFLAGS="--sysroot=$SYSROOT" \
-            CFLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include" \
-            CPPFLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include"
+            --with-system-ffi \
+            --without-ensurepip
 
-      - name: Build and install
+      - name: Build and install (cross)
+        working-directory: "Python-${{ env.PYTHON_VERSION }}"
+        env:
+          CC: ${{ env.CC }}
+          CXX: ${{ env.CXX }}
         run: |
-          cd Python-${PYTHON_VERSION}
+          set -euo pipefail
           make -j$(nproc)
-          make install
+          # Install into DESTDIR under the source tree for packaging
+          make install DESTDIR="$PWD/install-${{ matrix.arch }}"
 
-      - name: Upload built Python
+      - name: Package install tree
+        working-directory: "Python-${{ env.PYTHON_VERSION }}"
+        run: |
+          set -euo pipefail
+          TARNAME="../python-${{ env.PYTHON_VERSION }}-${{ matrix.arch }}.tar.gz"
+          tar czf "${TARNAME}" "install-${{ matrix.arch }}"
+          ls -lh "${TARNAME}"
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-android-${PYTHON_VERSION}
-          path: ${{ github.workspace }}/python-android
+          name: python-${{ env.PYTHON_VERSION }}-${{ matrix.arch }}
+          path: python-${{ env.PYTHON_VERSION }}-${{ matrix.arch }}.tar.gz
