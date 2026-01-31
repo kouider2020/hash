@@ -1,0 +1,74 @@
+name: Build Python for Android ARM64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-python:
+    runs-on: ubuntu-latest
+    env:
+      PYTHON_VERSION: 2.7.18
+      ANDROID_NDK_VERSION: r25b
+      TARGET: aarch64-linux-android
+      API_LEVEL: 21
+      PREFIX: ${{ github.workspace }}/python-android
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential wget curl unzip git
+
+      - name: Download Android NDK
+        run: |
+          wget https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip
+          unzip android-ndk-${ANDROID_NDK_VERSION}-linux.zip -d $HOME
+          echo "ANDROID_NDK=$HOME/android-ndk-${ANDROID_NDK_VERSION}" >> $GITHUB_ENV
+
+      - name: Download Python source
+        run: |
+          wget https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz
+          tar xvf Python-${PYTHON_VERSION}.tgz
+
+      - name: Set up cross-compiler environment
+        run: |
+          TOOLCHAIN=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64
+          SYSROOT=$TOOLCHAIN/sysroot
+          echo "TOOLCHAIN=$TOOLCHAIN" >> $GITHUB_ENV
+          echo "SYSROOT=$SYSROOT" >> $GITHUB_ENV
+          echo "CC=$TOOLCHAIN/bin/${TARGET}${API_LEVEL}-clang" >> $GITHUB_ENV
+          echo "CXX=$TOOLCHAIN/bin/${TARGET}${API_LEVEL}-clang++" >> $GITHUB_ENV
+          echo "AR=$TOOLCHAIN/bin/llvm-ar" >> $GITHUB_ENV
+          echo "RANLIB=$TOOLCHAIN/bin/llvm-ranlib" >> $GITHUB_ENV
+          echo "LD=$TOOLCHAIN/bin/ld" >> $GITHUB_ENV
+          echo "STRIP=$TOOLCHAIN/bin/llvm-strip" >> $GITHUB_ENV
+
+      - name: Configure Python for cross-compilation
+        run: |
+          cd Python-${PYTHON_VERSION}
+          ./configure \
+            --host=${TARGET} \
+            --build=$(uname -m)-linux-gnu \
+            --prefix=$PREFIX \
+            --enable-shared \
+            --disable-ipv6 \
+            ac_cv_file__dev_ptmx=yes \
+            ac_cv_file__dev_ptc=no \
+            LDFLAGS="--sysroot=$SYSROOT" \
+            CFLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include" \
+            CPPFLAGS="--sysroot=$SYSROOT -I$SYSROOT/usr/include"
+
+      - name: Build and install
+        run: |
+          cd Python-${PYTHON_VERSION}
+          make -j$(nproc)
+          make install
+
+      - name: Upload built Python
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-android-${PYTHON_VERSION}
+          path: ${{ github.workspace }}/python-android
