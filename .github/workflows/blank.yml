@@ -1,48 +1,76 @@
-name: Build LIEF 0.9.0 ARM64
+name: Build CMake 3.5 for Termux Bionic
 
 on:
-  push:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Enable QEMU (ARM64)
-        uses: docker/setup-qemu-action@v3
+    - name: Checkout source
+      uses: actions/checkout@v4
 
-      - name: Build LIEF 0.9.0 in ARM64 container
-        run: |
-          docker run --rm --platform linux/arm64 \
-            -v $PWD:/work \
-            ubuntu:22.04 bash -eux <<'EOF'
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          git \
+          wget \
+          curl \
+          unzip \
+          pkg-config \
+          python3 \
+          python3-pip \
+          libtool \
+          autoconf \
+          automake
 
-          apt update
-          apt install -y \
-            python3 python3-dev python3-pip \
-            build-essential cmake \
-            libstdc++6 libssl-dev \
-            zlib1g-dev \
-            wget tar
+    - name: Setup Termux sysroot
+      run: |
+        mkdir -p $HOME/termux-bionic
+        cd $HOME/termux-bionic
+        # Download Termux bionic sysroot (prebuilt headers + libs)
+        wget https://github.com/termux/termux-packages/releases/download/bootstrap-2020/termux-bootstrap-bionic.tar.gz
+        tar -xzf termux-bootstrap-bionic.tar.gz
+        echo "Sysroot ready at $HOME/termux-bionic"
 
-          cd /work
+    - name: Download CMake 3.5 source
+      run: |
+        wget https://cmake.org/files/v3.5/cmake-3.5.2.tar.gz
+        tar -xzf cmake-3.5.2.tar.gz
+        mv cmake-3.5.2 cmake-src
 
-          # ---- download LIEF 0.9.0 ----
-          wget https://files.pythonhosted.org/packages/source/l/lief/lief-0.9.0.tar.gz
-          tar xf lief-0.9.0.tar.gz
-          cd lief-0.9.0
+    - name: Configure with Termux toolchain
+      run: |
+        mkdir build && cd build
+        cmake ../cmake-src \
+          -DCMAKE_SYSTEM_NAME=Android \
+          -DCMAKE_SYSTEM_VERSION=21 \
+          -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
+          -DCMAKE_ANDROID_NDK=$HOME/termux-bionic \
+          -DCMAKE_ANDROID_STL_TYPE=gnustl_shared \
+          -DCMAKE_INSTALL_PREFIX=$HOME/cmake-termux \
+          -DCMAKE_BUILD_TYPE=Release
 
-          python3 -m pip install --upgrade pip setuptools wheel
+    - name: Build
+      run: |
+        cd build
+        make -j$(nproc)
 
-          python3 setup.py clean
-          python3 setup.py bdist_wheel
+    - name: Install
+      run: |
+        cd build
+        make install
+        tar -czf cmake-3.5.2-termux-bionic.tar.gz -C $HOME cmake-termux
 
-          ls -lh dist
-          EOF
-
-      - name: Upload wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: lief-0.9.0-arm64
-          path: lief-0.9.0/dist/*.whl
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cmake-3.5.2-termux-bionic
+        path: build/cmake-3.5.2-termux-bionic.tar.gz
